@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Template
+parameters:
+  - name: LS_BUILD_ID
+    required: true
+  - name: LS_BUILD_NAME
+    required: true
+  - name: LS_BUILD_URL
+    required: true
+  - name: LS_BUILD_VERSION
+    required: true
+  - name: LS_COMMIT_ID
+    required: true
+  - name: LS_DOCKER_REGISTRY
+    required: true
+  - name: LS_DOCKERFILE_PATH
+    required: false
+    default: Dockerfile
+  - name: LS_GIT_URL
+    required: true
+  - name: LS_IMAGE_NAME
+    required: true
+  - name: LS_LOKI_BUILD_ID
+    required: true
+  - name: LS_LOKI_URL
+    required: true
+  - name: LS_OPENSHIFT_PROJECT
+    required: true
+  - name: LS_PIPELINE_NAME
+    required: true
+  - name: LS_PROJECT_CSI_ID
+    required: true
+  - name: LS_PROJECT_NAME
+    required: true
+objects:
+  - apiVersion: v1
+    kind: BuildConfig
+    metadata:
+      name: ${LS_BUILD_NAME}
+      labels:
+        lightspeed-pipeline: ${LS_PIPELINE_NAME}
+        lightspeed-build-id: ${LS_BUILD_ID}
+    spec:
+      runPolicy: Serial
+      source:
+        type: Binary
+      strategy:
+        type: Docker
+        forcePull: true
+        dockerStrategy:
+          dockerfilePath: ${LS_DOCKERFILE_PATH}
+          pullSecret:
+            name: citi-docker
+      output:
+        pushSecret:
+          name: artifactory-docker-push
+        to:
+          kind: DockerImage
+          name: ${LS_DOCKER_REGISTRY}/${LS_OPENSHIFT_PROJECT}/${LS_IMAGE_NAME}:${LS_BUILD_VERSION}
+        imageLabels:
+        - name: com.citi.lightspeed.build.commit.id
+          value: "${LS_COMMIT_ID}"
+        - name: com.citi.lightspeed.build.id
+          value: "${LS_BUILD_ID}"
+        - name: com.citi.lightspeed.build.pipeline.name
+          value: "${LS_PIPELINE_NAME}"
+        - name: com.citi.lightspeed.build.source-location
+          value: "${LS_GIT_URL}"
+        - name: com.citi.lightspeed.build.url
+          value: "${LS_BUILD_URL}"
+        - name: com.citi.lightspeed.build.version
+          value: "${LS_BUILD_VERSION}"
+        - name: com.citi.lightspeed.csi.id
+          value: "${LS_PROJECT_CSI_ID}"
+        - name: com.citi.lightspeed.loki.build.id
+          value: "${LS_LOKI_BUILD_ID}"
+        - name: com.citi.lightspeed.loki.url
+          value: "${LS_LOKI_URL}"
