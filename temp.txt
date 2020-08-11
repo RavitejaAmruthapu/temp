@@ -1,0 +1,21 @@
+sh(script: "oc process -f ${templatePath}" +
+      " -pLS_BUILD_ID=${env.LS_BUILD_ID}" +
+      " -pLS_BUILD_NAME=${buildConfigName}" +
+      " -pLS_BUILD_URL=${env.BUILD_URL}" +
+      " -pLS_BUILD_VERSION=${env.LS_BUILD_VERSION}" +
+      " -pLS_COMMIT_ID=${env.GIT_COMMIT}" +
+      " -pLS_DOCKER_REGISTRY=${env.LS_ARTIFACTORY_DOCKER_REGISTRY}" +
+      " -pLS_DOCKERFILE_PATH=${dockerFile}" +
+      " -pLS_GIT_URL=${env.GIT_URL}" +
+      " -pLS_IMAGE_NAME=${fullImageName}" +
+      " -pLS_LOKI_BUILD_ID=${env.LS_LOKI_BUILD_ID}" +
+      " -pLS_LOKI_URL=${env.LS_LOKI_URL}" +
+      " -pLS_OPENSHIFT_PROJECT=${env.LS_OPENSHIFT_PROJECT}" +
+      " -pLS_PIPELINE_NAME=${env.LS_PIPELINE_NAME}" +
+      " -pLS_PROJECT_CSI_ID=${env.LS_CSI_APP_ID}" +
+      " -pLS_PROJECT_NAME=${env.LS_PROJECT_NAME}" +
+      " | oc apply -f-"
+  )
+  sh(script: "rm ${templatePath}")
+  sh(script: "oc start-build ${buildConfigName} --from-dir=${contextDir} --follow --wait")
+  sh(script: "oc delete buildconfig ${buildConfigName}")
