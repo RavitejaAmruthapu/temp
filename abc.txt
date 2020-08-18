@@ -1,0 +1,426 @@
+def SKIP_CI= 'false'
+pipeline {
+  agent { label 'maven' }
+  options { timeout(time: 20, unit: 'MINUTES') }
+  environment {
+    RELEASE_READY = "false"
+    LS_VERSION_MODE = 'branch'
+    LS_GIT_BRANCH_DOCKER_SAFE = 'false'
+    STRAIGHT_TO_UAT = 'false'
+    REFLEXION_BUILD_TO_JIRA = 'true' // default false
+    REFLEXION_BUILD_TO_EMAIL = 'false'  // default false
+    REFLEXION_EMAIL_BUILD_TYPE = 'releaseBuilds' // values from: allBuilds, releaseBuilds. Default is "releaseBuilds"
+    REFLEXION_EMAIL_FROM = '' // optional
+    REFLEXION_EMAIL_TO = 'as24482'  // required, if no domain included will use "@imcnam.ssmb.com" automatically
+    REFLEXION_EMAIL_CC = 'as24482' // optional
+    REFLEXION_CHANGE_LIST_TYPE = 'JIRA' // value from: JIRA, COMMIT. Default is "JIRA"
+    REFLEXION_CHANGE_LIST_BY_DAY = '14'  // default is 14
+    REFLEXION_CHANGE_LIST_BY_COUNT = '10'  // optional, if specified, will override "REFLEXION_CHANGE_LIST_BY_DAY"
+    REFLEXION_CHANGE_LIST_LOCATION = './deploy/changes.log' // optional, you can change it to anywhere
+   }
+
+
+  stages {
+
+    stage('Initialise') {
+      steps {
+        stepInitialise()
+        script {
+          sh 'git log -1 > GIT_LOG'
+          git_log = readFile 'GIT_LOG'
+          if (git_log.contains('[maven-release-plugin]')) 
+          {
+
+           SKIP_CI='true' 
+          echo "value of SKIP_CI is $SKIP_CI"
+          }
+            /*{
+                withEnv(["SKIP_CI=true"]) 
+                   { 
+                    echo "the value of SKIP_CI is $env.SKIP_CI"
+                   }
+                   
+            }*/
+          else 
+          {
+            echo "Maven release plugin has not committed the build, so please continue running other stages"
+          }
+        
+      }
+    
+      }
+    
+    }
+
+         stage('Maven build') {
+                when {
+                 expression { SKIP_CI != 'true' }
+                 
+                }
+        steps {
+                script {
+                  if (get_branch_type(env.LS_GIT_BRANCH) == 'develop') {
+                   
+                                      
+         withCredentials([usernamePassword(credentialsId: 'citi-ear', usernameVariable: 'LS_ARTIFACTORY_CREDS_USR', passwordVariable: 'LS_ARTIFACTORY_CREDS_PSW')]) {
+              sh "mvn -B --settings settings.xml -Drepo.username=${LS_ARTIFACTORY_CREDS_USR} -Drepo.password=${LS_ARTIFACTORY_CREDS_PSW} -DaltDeploymentRepository=central::default::https://www.artifactrepository.citigroup.net/artifactory/maven-icg-teamdev-local clean deploy"
+              
+              archiveArtifacts "target/**/*"
+              junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+              jacoco classPattern: 'target/classes'
+
+                 
+                }
+
+                  }
+                  else if (get_branch_type(env.LS_GIT_BRANCH) == 'release') {
+
+    
+                withEnv(["STRAIGHT_TO_UAT=true"]) { 
+                    echo "STRAIGHT_TO_UAT = ${env.STRAIGHT_TO_UAT}" // prints "FOO = foobar"
+                }
+                env.STRAIGHT_TO_UAT = 'true'
+                                      
+         withCredentials([usernamePassword(credentialsId: 'citi-ear', usernameVariable: 'LS_ARTIFACTORY_CREDS_USR', passwordVariable: 'LS_ARTIFACTORY_CREDS_PSW'),usernamePassword(credentialsId: 'icg-bitbucket-basicauth', passwordVariable: 'T_PASSWORD', usernameVariable: 'T_USERNAME')]) {
+              sh 'git config --global user.email "TTSBuildIntegration@dummy.com"'
+              sh 'git config --global user.name "TTSBuildIntegration"'
+              sh '''
+                          if git show-ref refs/heads/${LS_GIT_BRANCH} ; then
+                            echo 'branch exists! for release already .. deleting'
+                            git branch -D ${LS_GIT_BRANCH}
+                          fi
+              '''
+              sh 'git checkout ${LS_GIT_BRANCH}'
+              sh 'git branch -u origin/${LS_GIT_BRANCH}'
+              sh 'git config branch.${LS_GIT_BRANCH}.remote origin'
+              sh 'git config branch.${LS_GIT_BRANCH}.merge refs/heads/${LS_GIT_BRANCH}'
+
+
+
+              sh "mvn -B --settings settings.xml -Drepo.username=${LS_ARTIFACTORY_CREDS_USR} -Drepo.password=${LS_ARTIFACTORY_CREDS_PSW} -Dusername=${T_USERNAME} -Dpassword=${T_PASSWORD} -Dmaven.javadoc.skip=true -DignoreSnapshots=true release:clean release:prepare release:perform"
+              archiveArtifacts "target/**/*"
+              junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+              jacoco classPattern: 'target/classes'
+
+          
+                }
+
+                  }
+                  else if (get_branch_type(env.LS_GIT_BRANCH) == 'master') {
+
+    
+                withEnv(["STRAIGHT_TO_UAT=true"]) { 
+                    echo "STRAIGHT_TO_UAT = ${env.STRAIGHT_TO_UAT}" // prints "FOO = foobar"
+                }
+                env.STRAIGHT_TO_UAT = 'true'
+                                      
+         withCredentials([usernamePassword(credentialsId: 'citi-ear', usernameVariable: 'LS_ARTIFACTORY_CREDS_USR', passwordVariable: 'LS_ARTIFACTORY_CREDS_PSW'),usernamePassword(credentialsId: 'icg-bitbucket-basicauth', passwordVariable: 'T_PASSWORD', usernameVariable: 'T_USERNAME')]) {
+              sh 'git config --global user.email "TTSBuildIntegration@dummy.com"'
+              sh 'git config --global user.name "TTSBuildIntegration"'
+              sh 'git checkout ${LS_GIT_BRANCH}'
+              sh 'git branch -u origin/${LS_GIT_BRANCH}'
+              sh 'git config branch.${LS_GIT_BRANCH}.remote origin'
+              sh 'git config branch.${LS_GIT_BRANCH}.merge refs/heads/${LS_GIT_BRANCH}'
+
+
+
+              sh "mvn -B --settings settings.xml -Drepo.username=${LS_ARTIFACTORY_CREDS_USR} -Drepo.password=${LS_ARTIFACTORY_CREDS_PSW} -Dusername=${T_USERNAME} -Dpassword=${T_PASSWORD} -Dmaven.javadoc.skip=true -DignoreSnapshots=true release:perform"
+              archiveArtifacts "target/**/*"
+              junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+              jacoco classPattern: 'target/classes'
+
+          
+                }
+
+                  }
+
+                  else {
+
+                                      
+         withCredentials([usernamePassword(credentialsId: 'citi-ear', usernameVariable: 'LS_ARTIFACTORY_CREDS_USR', passwordVariable: 'LS_ARTIFACTORY_CREDS_PSW')]) {
+              sh "mvn -B --settings settings.xml -Drepo.username=${LS_ARTIFACTORY_CREDS_USR} -Drepo.password=${LS_ARTIFACTORY_CREDS_PSW} clean package"
+              archiveArtifacts "target/**/*"
+              junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+              jacoco classPattern: 'target/classes'
+
+                 
+                }
+                    
+                  }
+ 
+
+  
+              
+              }
+        
+        }
+      }
+
+    stage('Docker Image Build') {
+      when {
+
+        expression { SKIP_CI != 'true' }
+                
+           }
+    steps {
+        parallel (
+            "SonarQube" : {
+              stepMavenSonarAnalysis()
+
+            },
+            "BuildContainer" : {
+
+              stepContainerImageBuild()
+            }
+        )
+     }
+}
+
+    stage('Build ECS deployment image') {
+      when {
+        
+        expression { SKIP_CI != 'true' }
+                 
+    }
+      steps {
+        stepEcsDeploymentImageBuild()
+      }
+    }
+    stage('Deploy to DEV') {
+      when {
+        
+        expression { SKIP_CI != 'true' }
+                 
+    }
+      steps {
+        stepEcsDeploy()
+      }
+    }
+
+    stage('Publish to uDeploy') {
+      when {
+   
+        expression { SKIP_CI != 'true' }
+                
+        expression { return env.LS_GIT_BRANCH ==~ "develop|master|release.*" }
+      }
+      steps {
+        stepEcsUdeployPublish()
+      }
+    }
+
+     stage('Validate Release') {
+       
+      when {
+        
+        expression { SKIP_CI != 'true' }
+                 
+        expression { return env.LS_GIT_BRANCH ==~ "master|release.*" }
+      }
+      steps {
+           withEnv(["RELEASE_READY=true"]) { 
+                    echo "RELEASE_READY = ${env.RELEASE_READY}" // prints "FOO = foobar"
+                }
+      }
+    }
+    stage('Deploy to SIT') {
+      when {
+        
+        expression { SKIP_CI != 'true' }
+                 
+        expression { return env.LS_GIT_BRANCH ==~ "develop" }
+      }
+      steps {
+        echo "replace this skipping sit"
+        //stepUdeployRunApplicationProcess("Deploy", "ECS-DEV-namicggtd10d")
+      }
+    }
+    stage('Deploy to UAT') {
+      when {
+        
+        expression { SKIP_CI != 'true' }
+                 
+        expression { return env.LS_GIT_BRANCH ==~ "release.*"}
+       
+      }
+      steps {
+        echo "replace this with actual step"
+        //stepUdeployRunApplicationProcess("Deploy", "ECS-UAT-namicgswd11u")
+      }
+    }
+     stage('Release Ready') {
+          when {
+        
+        expression { SKIP_CI != 'true' }
+                 
+        expression { return env.LS_GIT_BRANCH ==~ "develop" }
+      }
+            steps {
+                createRelease()
+        }
+     }
+
+
+  }
+  post {
+    always {
+      stepReflexionNotify()
+      stepFinalise()
+    }
+  }
+}
+
+
+// Utility functions
+def get_branch_type(String branch_name) {
+  //Must be specified according to <flowInitContext> configuration of jgitflow-maven-plugin in pom.xml
+  def dev_pattern = ".*develop"
+  def release_pattern = ".*release/.*"
+  def feature_pattern = ".*feature/.*"
+  def bugfix_pattern = ".*bugfix/.*"
+  def hotfix_pattern = ".*hotfix/.*"
+  def master_pattern = ".*master"
+  if (branch_name =~dev_pattern) {
+    return "dev"
+  } else if (branch_name =~release_pattern) {
+    return "release"
+  } else if (branch_name =~master_pattern) {
+    return "master"
+  } else if (branch_name =~feature_pattern) {
+    return "feature"
+  } else if (branch_name =~bugfix_pattern) {
+    return "feature"
+  } else if (branch_name =~hotfix_pattern) {
+    return "feature"
+  } else {
+    return null;
+  }
+}
+
+def get_branch_deployment_environment(String branch_type) {
+  if (branch_type == "dev") {
+    return "dev"
+  } else if (branch_type == "release") {
+    return "staging"
+  } else if (branch_type == "master") {
+    return "prod"
+  } else {
+    return null;
+  }
+}
+
+
+void createRelease() {
+
+                script {
+                    def proceed = true
+                    try {
+                        timeout(time: 10, unit: 'MINUTES') {
+                            input(message: 'UAT deployent and Release ?')
+                        }
+                    } catch (err) {
+                        proceed = false
+                        echo "Timed out or false"
+                    }
+                    if(proceed) {
+                        // deployment steps
+                        echo "Proceed with deployment"
+
+  withCredentials([usernamePassword(credentialsId: 'icg-bitbucket-basicauth', passwordVariable: 'T_PASSWORD', usernameVariable: 'T_USERNAME')]) {
+
+                 sh '''         
+                          #!/usr/bin/bash
+                          REL_BRANCH_PREFIX="release/"
+                          POM=./pom.xml
+                          PROJ_DIR=`dirname ${POM}`
+                         
+                          git config user.name lightspeed
+                          git config user.email dl.cts.global.build.integration.support@imcnam.ssmb.com
+                          export GIT_COMMITTER_EMAIL="dl.cts.global.build.integration.support@imcnam.ssmb.com"
+                          export GIT_COMMITTER_NAME="lightspeed"
+                          echo $GIT_COMMITTER_EMAIL
+                          echo $GIT_COMMITTER_NAME
+                          
+                          #orig_ver=$(mvn help:evaluate -Dexpression=project.version | grep -e '^[^\\[]')
+                          orig_ver=$(mvn -q -Dexec.executable=echo -Dexec.args='${project.version}' --non-recursive exec:exec)
+
+                          if [[ -z "${orig_ver}" ]]; then
+                            echo "ERROR: Unable to get original project version from ${POM}"
+                            exit 1
+                          fi
+
+                          #ver_arr=($(echo $orig_ver| tr -d . |cut -d- -f1 |sed  's/\\(.\\)/\\1 /g'))
+                          ver_arr=( ${orig_ver//./ })
+                          num_digits=${#ver_arr[@]}
+                          [[ $num_digits -ne 3 ]] && echo "[ERROR] version must be 3 digits ($orig_ver is $num_digits digits)" && exit 1
+
+                          
+                          REL_BRANCH_NAME="${REL_BRANCH_PREFIX}${ver_arr[0]}.${ver_arr[1]}.x"
+
+
+                          # remove snapshots from dependencies in release branch pom.xml files
+                          #find . -name pom.xml | xargs -r grep -l "<version>[0-9]\\{1,\\}\\.[0-9]\\{1,\\}\\.[0-9]\\{1,\\}-SNAPSHOT<" | xargs -r sed -i '/<dependencies>/, /<\\/dependencies>/ s/-SNAPSHOT//g'
+    
+
+                          #Prune unused remote branches
+                          if git show-ref refs/heads/$REL_BRANCH_NAME ; then
+                            echo 'branch exists! for release already .. deleting'
+                            git branch -D $REL_BRANCH_NAME
+                          fi
+                          
+                          #git remote prune https://${T_USERNAME}:${T_PASSWORD}@cedt-icg-bitbucket.nam.nsroot.net/bitbucket/scm/ttsci-170534/blue-green-ecs-170534.git
+                          echo "Printing to see if release branch exists in remote ......"
+                          git ls-remote --heads https://${T_USERNAME}:${T_PASSWORD}@cedt-icg-bitbucket.nam.nsroot.net/bitbucket/scm/ttsci-170534/blue-green-ecs-170534.git $REL_BRANCH_NAME
+                          echo "[INFO] creating release branch ${REL_BRANCH_NAME}"
+                          git checkout -b $REL_BRANCH_NAME
+
+                          find . -name pom.xml | xargs git add -A
+                          echo $REL_BRANCH_NAME > RELEASE_NOTE.MD
+                          git add -A
+                          git show-ref
+                          git commit -m "Removed SNAPSHOTS in release. Release Ready"
+                          git push https://${T_USERNAME}:${T_PASSWORD}@cedt-icg-bitbucket.nam.nsroot.net/bitbucket/scm/ttsci-170534/blue-green-ecs-170534.git $REL_BRANCH_NAME --force
+
+                          #next_ver_arr=($(echo $orig_ver| tr -d . |cut -d- -f1 |sed  's/\\(.\\)/\\1 /g'))
+                          next_ver_arr=( ${orig_ver//./ })
+                          ((next_ver_arr[1]++))
+                          if [[ `echo ${next_ver_arr[2]} | grep -c \\-` -gt 0 ]]; then
+                            next_ver_arr[2]="0-${next_ver_arr[2]#*-}"
+                          else
+                            next_ver_arr[2]=0
+                          fi
+                          next_ver="${next_ver_arr[0]}.${next_ver_arr[1]}.${next_ver_arr[2]}"
+
+                          git checkout develop
+                          mvn -B -q versions:set -DnewVersion=${next_ver}
+
+                          PROJ_DIR=`dirname ${POM}`
+
+                         
+                          echo "[INFO] updating develop branch pom.xml with next version ${next_ver}"
+                    
+                          cd $PROJ_DIR
+
+                        
+                        
+
+                          # commit and push changes
+                          find . -name pom.xml | xargs git add -A
+                          git show-ref
+                          git commit -m "create_release: bumped version from $orig_ver -> $next_ver"
+                          git remote -v
+                          git push https://${T_USERNAME}:${T_PASSWORD}@cedt-icg-bitbucket.nam.nsroot.net/bitbucket/scm/ttsci-170534/blue-green-ecs-170534.git develop --force
+
+                '''
+
+    // some block
+}
+   
+
+            
+
+                }
+            }
+
+
+}
